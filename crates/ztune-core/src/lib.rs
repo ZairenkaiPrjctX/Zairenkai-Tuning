@@ -11,9 +11,12 @@
 pub mod blockdev;
 pub mod contract;
 pub mod cpu;
+pub mod device;
 pub mod gpu;
 pub mod gpu_table;
 pub mod memory;
 pub mod ops;
 pub mod platform;
+pub mod profile;
+pub mod soc;
 pub mod thermal;

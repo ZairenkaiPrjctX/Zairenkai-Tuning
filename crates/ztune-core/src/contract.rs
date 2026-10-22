@@ -132,6 +132,22 @@ pub struct Capability {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current: Option<String>,
     pub evidence: Vec<String>,
+    /// Write capabilities only: whether an exact-device profile authorizes writes here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorization: Option<Authorization>,
+}
+
+/// Whether a write capability may be used on this exact device, and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Authorization {
+    /// True only for a Tier D (device_validated, exact device/build) profile grant.
+    pub write_authorized: bool,
+    pub tier: crate::profile::Tier,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
+    /// Values the profile allows (empty when not authorized).
+    pub granted_values: Vec<String>,
+    pub reason: String,
 }
 
 /// Machine-readable error codes. The set only grows within schema 1.
@@ -157,6 +173,8 @@ pub enum ErrorCode {
     VerificationFailed,
     /// The feature exists in the contract but is intentionally not implemented.
     NotImplemented,
+    /// No device_validated profile for this exact device/build grants the control or value.
+    NotAuthorized,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

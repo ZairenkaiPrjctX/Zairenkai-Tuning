@@ -11,7 +11,8 @@ put detail in `AGENT/`.
 This repository is **Zairenkai Tuning**, the organization's **GPL-3.0-only** component: a Rust
 workspace that builds `ztune`, a command-line program for telemetry and validated tuning.
 - `crates/ztune-core`: the contract (`zairenkai.tuning` schema 1), parsers, validation,
-  the GPU table editor. No I/O.
+  SoC family registry (`data/soc-registry.json`), device identity, profiles and the tier
+  resolver, the GPU table editor. No I/O.
 - `crates/ztune`: SysRoot reads, verified writes, the restore journal, the CLI.
 - `scripts/build-android.sh`: the component for Zairenkai-Modules, with its Corresponding Source.
 
@@ -25,8 +26,10 @@ Non-negotiables in this repo:
 - **Provenance first.** Before adapting more upstream code, record the URL, commit, licence,
   authors and files in `docs/PROVENANCE.md`.
 - **Writes.** Only the operations in `ztune_core::ops` (`io.scheduler`, `gpu.governor`), only
-  values the device advertises, validated before the lock, journalled before the first write,
-  read back, rolled back on failure. No chmod, no thermal nodes, no CPU/GPU frequency limits,
+  values the device advertises **and** a Tier D (exact device/build, `device_validated`,
+  hardware-tested) profile grants (`docs/PROFILES.md`, `docs/adr/0001-write-path-tiers.md`);
+  validated before the lock, journalled before the first write, read back, rolled back on
+  failure. A family match never authorizes a write. Never ship a synthetic profile. No chmod, no thermal nodes, no CPU/GPU frequency limits,
   no vendor configuration, no writes at install or boot.
 - **Readings** carry a status and a unit; never substitute a number for a failed read.
 - **GPU table:** underclock edits of a device tree file only, behind device match, backup and
@@ -40,10 +43,11 @@ Non-negotiables in this repo:
 | Purpose | Command | Status |
 |---|---|---|
 | Build | `cargo build --workspace` | Verified. Evidence: 2026-10-22 |
-| Test | `cargo test --workspace` | Verified. Evidence: 51 passed (33 core + 10 unit + 8 CLI), 2026-10-22 |
+| Test | `cargo test --workspace` | Verified. Evidence: 68 passed (44 core + 13 unit + 11 CLI), 2026-10-22 |
 | Lint / format | `cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check` | Verified. Evidence: clean, 2026-10-22 |
 | MSRV | `cargo +1.85.0 test --workspace` | Verified. Evidence: passed, 2026-10-22 |
 | Shell lint | `shellcheck scripts/*.sh` | Verified. Evidence: clean (0.11.0), 2026-10-22 |
+| SoC registry | `scripts/update-soc-registry.py <linux checkout>` | Verified. Evidence: 443 identifiers from Linux 7be4bc52, 2026-10-22 |
 | Android component | `ANDROID_NDK_HOME=<ndk> scripts/build-android.sh` | Verified. Evidence: NDK r27d (SHA-256 checked), aarch64 PIE for `/system/bin/linker64`, 16 KB LOAD alignment checked; the source archive rebuilt the binary offline with an empty `CARGO_HOME`, 2026-10-22 |
 | Validate agent foundation | `python3 <path-to-.github>/agent-foundation/scripts/validate_agent_setup.py .` | Configured |
 

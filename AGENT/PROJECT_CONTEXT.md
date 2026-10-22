@@ -18,8 +18,8 @@
 | Area | Location | Status |
 |---|---|---|
 | Rust workspace (MSRV 1.85; serde, serde_json, sha2) | `Cargo.toml`, `Cargo.lock` | Verified. Evidence: `cargo +1.85.0 test --workspace`, 2026-10-22 |
-| Contract, parsers, validation, GPU table (no I/O) | `crates/ztune-core` | Verified. Evidence: 33 tests, 2026-10-22 |
-| SysRoot I/O, writer, journal, apply/restore, CLI | `crates/ztune` | Verified on fixtures. Evidence: 10 unit + 8 CLI tests, 2026-10-22. **Unverified** on a device |
+| Contract, parsers, validation, SoC registry, device identity, profiles/tiers, GPU table (no I/O) | `crates/ztune-core` | Verified. Evidence: 44 tests, 2026-10-22 |
+| SysRoot I/O, writer, journal, profiles loading, apply/restore, CLI | `crates/ztune` | Verified on fixtures. Evidence: 13 unit + 11 CLI tests, 2026-10-22. **Unverified** on a device |
 | Android component and Corresponding Source | `scripts/build-android.sh` | Verified. Evidence: NDK r27d build, exit 0; `cargo build --offline` from the extracted source archive succeeded with an empty `CARGO_HOME`, 2026-10-22. The rebuilt binary is not byte-identical (build paths are embedded) |
 | CI | `.github/workflows/ci.yml` | **Unverified** on GitHub |
 
@@ -28,8 +28,12 @@
 - Upstreams audited at RvSystem-Monitor `b07fe27`, Lynx `e56d6cd`, KonaBess `ff387dc`; each is
   GPL-3.0 without an "or later" clause and without per-file notices. Verified. Evidence:
   `docs/PROVENANCE.md`, 2026-10-22.
-- Writes: `io.scheduler` and `gpu.governor` only, values the device advertises. Verified.
-  Evidence: `ztune_core::ops`, `apply.rs` tests.
+- Writes: `io.scheduler` and `gpu.governor` only, and only with a Tier D profile grant. No
+  profile is shipped, so no write is possible on any device. Verified. Evidence:
+  `profiles/index.json` is `[]`; tests `without_a_device_validated_profile_nothing_is_written`,
+  `writes_need_an_exact_device_validated_profile`, 2026-10-22.
+- SoC families (Qualcomm, MediaTek, Exynos, Tensor) are detected from raw identifiers with
+  sourced rules; unlisted ids are still reported. Verified on fixtures. Evidence: `soc.rs` tests.
 - GPU table: inspect/plan/stage on device tree source only; flashing is not implemented.
   Verified. Evidence: `gputable.rs`, CLI test `gpu_table_plan_needs_matching_device_and_token`.
 - No Android device was available: real sysfs layouts, SELinux denials and kernel read-back
@@ -56,3 +60,4 @@
 - Which device runs the first validation of `io.scheduler` and `gpu.governor`?
 - Should the licence be GPL-3.0-or-later (allowed by all three upstreams)?
 - Should the repository be renamed, and who creates its `dev` default branch?
+- Should the gated write path stay in Tuning (`docs/adr/0001-write-path-tiers.md`)?

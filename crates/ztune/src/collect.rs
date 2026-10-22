@@ -15,10 +15,13 @@
 
 use serde::Serialize;
 use ztune_core::contract::{
-    Capability, CapabilityState, DataStatus, Error, ErrorCode, Reading, Unit,
+    Authorization, Capability, CapabilityState, DataStatus, Error, ErrorCode, Reading, Unit,
 };
 use ztune_core::cpu::{self, StatSample};
+use ztune_core::device::{self, CpuPolicy, DeviceIdentity};
 use ztune_core::ops::OperationId;
+use ztune_core::profile::Resolution;
+use ztune_core::soc;
 use ztune_core::{blockdev, gpu, memory, platform, thermal};
 
 use crate::journal::Journal;
@@ -132,6 +135,7 @@ pub struct StorageDevice {
 #[derive(Debug, Clone, Serialize)]
 pub struct Telemetry {
     pub interval_ms: u64,
+    pub soc: soc::Identity,
     pub platform: platform::Detection,
     pub cpu: CpuTelemetry,
     pub thermal: ThermalTelemetry,
@@ -150,6 +154,56 @@ pub fn detect_platform(root: &SysRoot) -> platform::Detection {
         .filter(|p| root.exists(p))
         .collect();
     platform::detect(compatible.as_deref(), &present)
+}
+
+/// The exact-device identity tuple (`ztune_core::device`). Nothing here runs a command.
+pub fn device_identity(root: &SysRoot) -> DeviceIdentity {
+    let props: Vec<Vec<(String, String)>> = device::BUILD_PROPS
+        .iter()
+        .filter_map(|p| root.read_proc(p).ok())
+        .map(|t| device::parse_props(&t))
+        .collect();
+    let dt = |p: &str| root.read_bounded(p, 4096).ok();
+    let attr = |p: &str| root.read_attr(p).ok().filter(|v| !v.is_empty());
+    let observed = soc::Observed {
+        dt_compatible: dt("/sys/firmware/devicetree/base/compatible")
+            .or_else(|| dt("/proc/device-tree/compatible"))
+            .map(|b| soc::split_dt_strings(&b))
+            .unwrap_or_default(),
+        dt_model: dt("/sys/firmware/devicetree/base/model")
+            .or_else(|| dt("/proc/device-tree/model"))
+            .and_then(|b| soc::split_dt_strings(&b).into_iter().next()),
+        soc0_family: attr("/sys/devices/soc0/family"),
+        soc0_machine: attr("/sys/devices/soc0/machine"),
+        soc0_soc_id: attr("/sys/devices/soc0/soc_id"),
+        ..Default::default()
+    };
+    let policies = root
+        .list("/sys/devices/system/cpu/cpufreq")
+        .into_iter()
+        .filter_map(|n| {
+            let policy: u32 = n.strip_prefix("policy")?.parse().ok()?;
+            let dir = format!("/sys/devices/system/cpu/cpufreq/{n}");
+            let cpus = attr(&format!("{dir}/related_cpus"))
+                .map(|v| {
+                    v.split_whitespace()
+                        .filter_map(|c| c.parse().ok())
+                        .collect()
+                })
+                .unwrap_or_default();
+            Some(CpuPolicy {
+                policy,
+                cpus,
+                max_freq_khz: attr(&format!("{dir}/cpuinfo_max_freq")).and_then(|v| v.parse().ok()),
+            })
+        })
+        .collect();
+    DeviceIdentity::from_parts(
+        &props,
+        attr("/proc/sys/kernel/osrelease"),
+        policies,
+        observed,
+    )
 }
 
 pub fn read_stat(root: &SysRoot) -> Result<StatSample, ReadError> {
@@ -310,6 +364,7 @@ pub fn telemetry(root: &SysRoot, interval_ms: u64) -> Telemetry {
 
     Telemetry {
         interval_ms,
+        soc: device_identity(root).soc,
         platform: detect_platform(root),
         cpu: CpuTelemetry {
             load: load_reading(&first, &second, None),
@@ -469,6 +524,7 @@ pub fn capabilities(
     root: &SysRoot,
     journal: Option<&Journal>,
     tele: &Telemetry,
+    resolution: &Resolution,
 ) -> Vec<Capability> {
     let mut caps = Vec::new();
     let read_cap = |id: &str, ok: bool, evidence: Vec<String>| Capability {
@@ -482,6 +538,7 @@ pub fn capabilities(
         allowed_values: vec![],
         current: None,
         evidence,
+        authorization: None,
     };
     let cpu_ok = tele
         .cpu
@@ -526,6 +583,7 @@ pub fn capabilities(
             allowed_values: vec![],
             current: None,
             evidence: vec![],
+            authorization: None,
         };
         match targets(root, op) {
             Ok(ts) => {
@@ -540,6 +598,31 @@ pub fn capabilities(
                     Some("mixed".into())
                 };
                 c.evidence = ts.iter().map(|t| t.path.clone()).collect();
+                let granted: Vec<String> = resolution
+                    .grant(op)
+                    .map(|g| {
+                        c.allowed_values
+                            .iter()
+                            .filter(|v| g.contains(v))
+                            .cloned()
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                c.authorization = Some(Authorization {
+                    write_authorized: !granted.is_empty(),
+                    tier: resolution.tier,
+                    profile_id: resolution.profile_id.clone(),
+                    reason: if granted.is_empty() {
+                        format!(
+                            "no device_validated profile grants {} on this exact device/build: {}",
+                            op.name(),
+                            resolution.explanation.join("; ")
+                        )
+                    } else {
+                        format!("granted by profile {:?}", resolution.profile_id)
+                    },
+                    granted_values: granted,
+                });
                 c.state = if c.allowed_values.is_empty() {
                     CapabilityState::Unsupported
                 } else if journal.is_some_and(|j| j.verified_for(op)) {

@@ -10,7 +10,20 @@ use std::process::Command;
 use common::{device, get, kona_dts, put};
 use serde_json::Value;
 
+fn profiles_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/profiles")
+}
+
+/// Runs ztune on the fixture with the synthetic device_validated test profile.
 fn ztune(f: &common::Fixture, args: &[&str]) -> (i32, Value) {
+    let dir = profiles_dir();
+    let mut all = vec!["--profiles-dir", dir.to_str().unwrap()];
+    all.extend_from_slice(args);
+    ztune_bare(f, &all)
+}
+
+/// Runs ztune on the fixture with only the embedded profiles (none today).
+fn ztune_bare(f: &common::Fixture, args: &[&str]) -> (i32, Value) {
     let out = Command::new(env!("CARGO_BIN_EXE_ztune"))
         .arg("--sysroot")
         .arg(&f.root)
@@ -74,6 +87,11 @@ fn capabilities_report_advertised_values_and_states() {
         .unwrap()
         .clone();
     assert_eq!(gpu["state"], "verified");
+    assert_eq!(gpu["authorization"]["write_authorized"], true);
+    assert_eq!(
+        gpu["authorization"]["granted_values"],
+        serde_json::json!(["msm-adreno-tz", "powersave"])
+    );
 }
 
 #[test]
@@ -278,4 +296,75 @@ fn gpu_table_rejects_other_input() {
         (4, Some("invalid_value"))
     );
     std::fs::remove_file(&p).unwrap();
+}
+
+#[test]
+fn device_reports_identity_family_and_tier() {
+    let f = device("device");
+    let (code, d) = ztune_bare(&f, &["device"]);
+    assert_eq!(code, 0);
+    assert_eq!(d["kind"], "device");
+    assert_eq!(d["device"]["codename"], "synthkona");
+    assert_eq!(d["device"]["soc"]["family"], "qualcomm");
+    assert_eq!(d["device"]["soc"]["platform_id"], "sm8250");
+    assert_eq!(d["device"]["android_api"], 35);
+    assert_eq!(d["resolution"]["tier"], "S");
+    assert!(d["resolution"]["write_grants"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let (_, d) = ztune(&f, &["device"]);
+    assert_eq!(d["resolution"]["tier"], "D");
+    assert_eq!(d["resolution"]["profile_id"], "synthkona-test-only");
+}
+
+#[test]
+fn writes_need_an_exact_device_validated_profile() {
+    let f = device("authz");
+    let (code, d) = ztune_bare(&f, &["apply", "gpu.governor", "powersave"]);
+    assert_eq!(code, 4);
+    assert_eq!(d["request"]["status"], "rejected");
+    assert_eq!(d["error"]["code"], "not_authorized");
+    assert_eq!(
+        get(&f.root, "/sys/class/kgsl/kgsl-3d0/devfreq/governor"),
+        "msm-adreno-tz"
+    );
+    let (_, d) = ztune_bare(&f, &["capabilities"]);
+    let gpu = d["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == "gpu.governor")
+        .unwrap()
+        .clone();
+    assert_eq!(gpu["authorization"]["write_authorized"], false);
+    assert_eq!(gpu["authorization"]["tier"], "S");
+    // A different build is a different device: the profile no longer matches.
+    put(
+        &f.root,
+        "/vendor/build.prop",
+        &std::fs::read_to_string(f.root.join("vendor/build.prop"))
+            .unwrap()
+            .replace("SYNTH.0001", "SYNTH.0002"),
+    );
+    let (code, d) = ztune(&f, &["apply", "gpu.governor", "powersave"]);
+    assert_eq!(
+        (code, d["error"]["code"].as_str()),
+        (4, Some("not_authorized"))
+    );
+}
+
+#[test]
+fn synthetic_profiles_never_count_on_a_real_root() {
+    let out = Command::new(env!("CARGO_BIN_EXE_ztune"))
+        .args(["--profiles-dir", profiles_dir().to_str().unwrap(), "device"])
+        .output()
+        .unwrap();
+    let d: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(d["profiles"]["loaded"].as_array().unwrap().is_empty());
+    assert_eq!(d["profiles"]["rejected"][0]["error"]["code"], "refused");
+    assert!(d["resolution"]["write_grants"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 }

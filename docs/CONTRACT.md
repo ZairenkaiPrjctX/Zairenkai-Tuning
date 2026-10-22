@@ -13,7 +13,7 @@ Every document is one JSON object:
 |---|---|---|
 | `schema` | string | Always `"zairenkai.tuning"` |
 | `schema_version` | integer | `1`. A consumer must refuse any other value |
-| `kind` | string | `identity`, `capabilities`, `telemetry`, `operation`, `restore`, `gpu_table` or `error` |
+| `kind` | string | `identity`, `device`, `capabilities`, `telemetry`, `operation`, `restore`, `gpu_table` or `error` |
 | `component` | object | `{"name": "zairenkai-tuning", "version": "<semver>"}` |
 
 Within schema 1, fields and enum values may be added, never removed or changed in meaning.
@@ -33,6 +33,7 @@ callers that keep only stderr on failure.
 | Command | `kind` | Writes? |
 |---|---|---|
 | `ztune identity` | `identity` | no |
+| `ztune device` | `device` | no |
 | `ztune capabilities` | `capabilities` | no |
 | `ztune telemetry [--interval-ms N]` | `telemetry` | no |
 | `ztune apply <operation> <value> [--dry-run]` | `operation` | yes, unless `--dry-run` |
@@ -40,7 +41,8 @@ callers that keep only stderr on failure.
 | `ztune gpu-table inspect\|plan\|stage …` | `gpu_table` | `stage` writes files into a new directory; never a partition |
 
 Global options: `--sysroot DIR` (tests), `--state-dir DIR` (default
-`/data/adb/zairenkai/tuning`, holds the journal and lock).
+`/data/adb/zairenkai/tuning`, holds the journal and lock), `--profiles-dir DIR` (extra
+profiles for tests and maintainers; Core never passes it).
 
 ## Readings
 
@@ -64,11 +66,22 @@ CPU frequency in kHz (cpufreq ABI), GPU frequency in Hz (devfreq ABI), memory in
 `contract` (`{schema, schema_version}`), `operations` (names), `upstreams` (name, url,
 commit, license of each adapted project).
 
+## `device`
+
+`device`: the identity tuple (`codename`, `manufacturer`, `board_platform`, `android_api`,
+`vendor_build_id`, `vendor_build_incremental`, `kernel_release`, `abis`, `cpu_policies`, `soc`).
+`soc`: `family` (`qualcomm`, `mediatek`, `samsung_exynos`, `google_tensor`, `unknown`),
+`platform_id` (raw lower-case id or null), `matches` (signal, raw value, `listed_in_mainline`,
+rule source), `conflicts`, `labels` (display only, with source) and `observed`.
+`resolution`: `tier` (`D`, `S`, `G`, `X`), `profile_id`, `write_grants`, `explanation`.
+`profiles`: `loaded` ids and `rejected` entries with errors. See `PROFILES.md`.
+
 ## `telemetry`
 
 | Field | Content |
 |---|---|
 | `interval_ms` | Time between the two `/proc/stat` samples; `0` means one sample, so every load is `not_sampled` |
+| `soc` | SoC family identification, as in `device` |
 | `platform` | `vendor` (`qualcomm`, `mediatek`, `unknown`), `qualcomm_score`, `mediatek_score`, `signals` |
 | `cpu.present` | Reading of core ids |
 | `cpu.load` | Reading, percent, all cores |
@@ -91,6 +104,10 @@ commit, license of each adapted project).
 | `unavailable` | Exists but cannot be used now (permission, read error) |
 | `unsupported` | Absent or ambiguous on this device |
 
+Write capabilities also carry `authorization`: `write_authorized` (true only for a Tier D
+grant), `tier`, `profile_id`, `granted_values`, `reason`. A consumer must not offer a write
+whose `write_authorized` is false; `allowed_values` alone is not permission.
+
 Capability ids in schema 1: `telemetry.cpu`, `telemetry.thermal.cpu`,
 `telemetry.thermal.gpu`, `telemetry.memory`, `telemetry.gpu`, `io.scheduler`,
 `gpu.governor`. `allowed_values` lists only values the device advertises and Zairenkai
@@ -104,7 +121,8 @@ accepts; a consumer must not offer anything else.
 | `gpu.governor` | `governor` of the GPU devfreq node (KGSL, else the single GPU-named devfreq node) | A governor the node advertises, except `userspace` |
 
 Before anything is written, `ztune` validates the value (1-32 of `[a-z0-9_-]`, advertised by
-every target, not refused), takes a lock, and saves each original value in a journal tagged
+every target, not refused), requires a Tier D profile granting the control and value (else
+`not_authorized`, also for `--dry-run`), takes a lock, and saves each original value in a journal tagged
 with the boot id. Each target is written and read back; on the first failure every target
 already written is restored and read back.
 
@@ -129,7 +147,7 @@ from an earlier boot is discarded, never replayed.
 
 `error.code`: `usage`, `invalid_value`, `unsupported`, `refused`, `device_mismatch`,
 `confirmation_required`, `permission_denied`, `busy`, `io`, `verification_failed`,
-`not_implemented`.
+`not_implemented`, `not_authorized` (exit 4).
 
 ## `gpu_table`
 

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "profile_id": "synthkona-test-only",
+  "profile_version": "0.1.0",
+  "status": "device_validated",
+  "synthetic": true,
+  "identity": {
+    "soc_family": "qualcomm",
+    "soc_platform_id": "sm8250",
+    "board_platform": "kona",
+    "device_codenames": ["synthkona"],
+    "android_api": {"min": 33, "max": 35},
+    "vendor_build_ids": ["SYNTH.0001"],
+    "kernel_releases": ["4.19.157-synthetic"],
+    "abis": ["arm64-v8a"]
+  },
+  "controls": [
+    {"control": "io.scheduler", "allowed_values": ["mq-deadline", "kyber", "none"]},
+    {"control": "gpu.governor", "allowed_values": ["msm-adreno-tz", "powersave"]}
+  ],
+  "provenance": [
+    {"url": "https://example.invalid/synthetic-test-profile", "commit": "0000000000000000000000000000000000000000", "paths": [], "license": "test fixture, not a device record"}
+  ],
+  "validation": {
+    "hardware_tested": true,
+    "evidence": ["SYNTHETIC: test fixture only; no device was used"],
+    "reviewed_at": "2026-10-22"
+  }
+}

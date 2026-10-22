@@ -1,0 +1,8 @@
+# Synthetic build.prop for tests; every value is invented.
+ro.product.vendor.device=synthkona
+ro.product.vendor.manufacturer=Synthetic
+ro.board.platform=kona
+ro.build.version.sdk=35
+ro.vendor.build.id=SYNTH.0001
+ro.vendor.build.version.incremental=1
+ro.vendor.product.cpu.abilist=arm64-v8a

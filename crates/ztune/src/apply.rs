@@ -21,6 +21,7 @@ use ztune_core::contract::{
     Error, ErrorCode, OperationStatus, RequestStatus, TargetOutcome, TargetResult,
 };
 use ztune_core::ops::{self, OperationId};
+use ztune_core::profile::Resolution;
 
 use crate::collect::{self, Target};
 use crate::journal::{self, Journal, Lock};
@@ -91,6 +92,7 @@ fn result(t: &Target, value: &str, actual: Option<String>, outcome: TargetOutcom
 pub fn apply(
     root: &SysRoot,
     state_dir: &Path,
+    resolution: &Resolution,
     op: OperationId,
     value: &str,
     dry_run: bool,
@@ -102,6 +104,35 @@ pub fn apply(
     for t in &targets {
         if let Err(e) = ops::validate(op, value, &t.available) {
             let e = Error::new(e.code, format!("{}: {}", t.name, e.message));
+            return rejected(op, value, dry_run, e);
+        }
+    }
+    // Tier D only: an exact-device, device_validated profile must grant this control and
+    // value. A dry run reports the same refusal, so a preview never promises a write.
+    match resolution.grant(op) {
+        Some(values) if values.iter().any(|v| v == value) => {}
+        Some(values) => {
+            let e = Error::new(
+                ErrorCode::NotAuthorized,
+                format!(
+                    "profile {:?} allows {} only as {}",
+                    resolution.profile_id.as_deref().unwrap_or("?"),
+                    op.name(),
+                    values.join(" ")
+                ),
+            );
+            return rejected(op, value, dry_run, e);
+        }
+        None => {
+            let e = Error::new(
+                ErrorCode::NotAuthorized,
+                format!(
+                    "tier {:?}: no device_validated profile grants {} on this exact device/build ({})",
+                    resolution.tier,
+                    op.name(),
+                    resolution.explanation.join("; ")
+                ),
+            );
             return rejected(op, value, dry_run, e);
         }
     }
@@ -342,6 +373,18 @@ mod tests {
     use crate::test_fixture as common;
     use common::{device, get, put};
 
+    /// The resolution the fixture device gets with the synthetic test profile.
+    fn granted(f: &common::Fixture) -> Resolution {
+        let root = SysRoot::new(&f.root);
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/profiles");
+        let loaded = crate::profiles::load(Some(&dir), true);
+        ztune_core::profile::resolve(
+            &loaded.profiles,
+            &crate::collect::device_identity(&root),
+            true,
+        )
+    }
+
     fn sched(f: &common::Fixture, dev: &str) -> String {
         get(&f.root, &format!("/sys/block/{dev}/queue/scheduler"))
     }
@@ -350,7 +393,14 @@ mod tests {
     fn scheduler_applies_to_every_internal_device_and_restores() {
         let f = device("apply");
         let root = SysRoot::new(&f.root);
-        let o = apply(&root, &f.state, OperationId::IoScheduler, "kyber", false);
+        let o = apply(
+            &root,
+            &f.state,
+            &granted(&f),
+            OperationId::IoScheduler,
+            "kyber",
+            false,
+        );
         assert_eq!(o.request.status, RequestStatus::Accepted);
         assert_eq!(
             o.operation.status,
@@ -368,7 +418,14 @@ mod tests {
         assert_eq!(sched(&f, "mmcblk1"), "[mq-deadline] none");
         assert_eq!(sched(&f, "loop0"), "[none] mq-deadline");
         // A second apply keeps the first original.
-        apply(&root, &f.state, OperationId::IoScheduler, "none", false);
+        apply(
+            &root,
+            &f.state,
+            &granted(&f),
+            OperationId::IoScheduler,
+            "none",
+            false,
+        );
         let r = restore(&root, &f.state);
         assert_eq!(r.status, OperationStatus::AppliedVerified);
         assert_eq!(sched(&f, "sda"), "[mq-deadline] kyber none");
@@ -381,7 +438,14 @@ mod tests {
         let f = device("rollback");
         put(&f.root, "/sys/block/sdb/queue/scheduler.fail", "");
         let root = SysRoot::new(&f.root);
-        let o = apply(&root, &f.state, OperationId::IoScheduler, "kyber", false);
+        let o = apply(
+            &root,
+            &f.state,
+            &granted(&f),
+            OperationId::IoScheduler,
+            "kyber",
+            false,
+        );
         assert_eq!(o.request.status, RequestStatus::Accepted);
         assert_eq!(o.operation.status, OperationStatus::RolledBack, "{o:?}");
         assert_eq!(o.error.as_ref().unwrap().code, ErrorCode::PermissionDenied);
@@ -399,13 +463,21 @@ mod tests {
     fn validation_happens_before_any_write() {
         let f = device("validate");
         let root = SysRoot::new(&f.root);
-        let o = apply(&root, &f.state, OperationId::IoScheduler, "bfq", false);
+        let o = apply(
+            &root,
+            &f.state,
+            &granted(&f),
+            OperationId::IoScheduler,
+            "bfq",
+            false,
+        );
         assert_eq!(o.request.status, RequestStatus::Rejected);
         assert_eq!(o.operation.status, OperationStatus::NotStarted);
         assert_eq!(o.error.unwrap().code, ErrorCode::InvalidValue);
         let o = apply(
             &root,
             &f.state,
+            &granted(&f),
             OperationId::GpuGovernor,
             "userspace",
             false,
@@ -418,7 +490,14 @@ mod tests {
             "/sys/block/sdb/queue/scheduler",
             "[mq-deadline] none\n",
         );
-        let o = apply(&root, &f.state, OperationId::IoScheduler, "kyber", false);
+        let o = apply(
+            &root,
+            &f.state,
+            &granted(&f),
+            OperationId::IoScheduler,
+            "kyber",
+            false,
+        );
         assert_eq!(o.request.status, RequestStatus::Rejected);
         assert_eq!(sched(&f, "sda"), "[mq-deadline] kyber none");
     }
@@ -427,7 +506,14 @@ mod tests {
     fn dry_run_and_no_change_write_nothing() {
         let f = device("dry");
         let root = SysRoot::new(&f.root);
-        let o = apply(&root, &f.state, OperationId::GpuGovernor, "powersave", true);
+        let o = apply(
+            &root,
+            &f.state,
+            &granted(&f),
+            OperationId::GpuGovernor,
+            "powersave",
+            true,
+        );
         assert_eq!(o.operation.status, OperationStatus::NotStarted);
         assert_eq!(o.operation.targets[0].outcome, TargetOutcome::WouldWrite);
         assert_eq!(
@@ -437,6 +523,7 @@ mod tests {
         let o = apply(
             &root,
             &f.state,
+            &granted(&f),
             OperationId::GpuGovernor,
             "msm-adreno-tz",
             false,
@@ -451,6 +538,7 @@ mod tests {
         let o = apply(
             &root,
             &f.state,
+            &granted(&f),
             OperationId::GpuGovernor,
             "powersave",
             false,
@@ -470,6 +558,38 @@ mod tests {
     }
 
     #[test]
+    fn without_a_device_validated_profile_nothing_is_written() {
+        let f = device("noprofile");
+        let root = SysRoot::new(&f.root);
+        let none = ztune_core::profile::resolve(&[], &crate::collect::device_identity(&root), true);
+        assert_eq!(none.tier, ztune_core::profile::Tier::S);
+        for dry in [true, false] {
+            let o = apply(
+                &root,
+                &f.state,
+                &none,
+                OperationId::IoScheduler,
+                "kyber",
+                dry,
+            );
+            assert_eq!(o.request.status, RequestStatus::Rejected);
+            assert_eq!(o.error.unwrap().code, ErrorCode::NotAuthorized);
+        }
+        assert_eq!(sched(&f, "sda"), "[mq-deadline] kyber none");
+        // A granted control with a value the profile does not allow is refused too.
+        let o = apply(
+            &root,
+            &f.state,
+            &granted(&f),
+            OperationId::GpuGovernor,
+            "performance",
+            false,
+        );
+        assert_eq!(o.error.unwrap().code, ErrorCode::NotAuthorized);
+        assert!(!f.state.join("journal.json").exists());
+    }
+
+    #[test]
     fn writes_need_a_boot_id() {
         let f = device("noboot");
         std::fs::remove_file(f.root.join("proc/sys/kernel/random/boot_id")).unwrap();
@@ -477,6 +597,7 @@ mod tests {
         let o = apply(
             &root,
             &f.state,
+            &granted(&f),
             OperationId::GpuGovernor,
             "powersave",
             false,

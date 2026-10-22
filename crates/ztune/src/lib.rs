@@ -11,6 +11,7 @@ pub mod cli;
 pub mod collect;
 pub mod gputable;
 pub mod journal;
+pub mod profiles;
 pub mod sysroot;
 pub mod writer;
 

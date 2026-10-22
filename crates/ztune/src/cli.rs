@@ -2,7 +2,7 @@
 // Copyright 2026 ZairenkaiPrjctX contributors
 //! Command-line parsing and dispatch. Every command prints one contract document on stdout.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 use ztune_core::contract::{
@@ -13,7 +13,9 @@ use ztune_core::ops::OperationId;
 
 use crate::journal::{self, Journal};
 use crate::sysroot::SysRoot;
-use crate::{apply, collect, gputable};
+use crate::{apply, collect, gputable, profiles};
+use ztune_core::device::DeviceIdentity;
+use ztune_core::profile::{self, Resolution};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Set by `scripts/build-android.sh` so the binary names the source it was built from.
@@ -27,10 +29,11 @@ pub const EXIT_REFUSED: u8 = 4;
 pub const EXIT_UNSUPPORTED: u8 = 5;
 
 pub const USAGE: &str = "\
-usage: ztune [--sysroot DIR] [--state-dir DIR] <command>
+usage: ztune [--sysroot DIR] [--state-dir DIR] [--profiles-dir DIR] <command>
 
 commands:
   identity                         component, version, licence, contract, upstreams
+  device                           exact-device identity, SoC family, support tier, profiles
   capabilities                     what this device supports (read and write)
   telemetry [--interval-ms N]      CPU, thermal, memory, GPU, storage (default 200 ms)
   apply <operation> <value> [--dry-run]
@@ -46,6 +49,7 @@ exit codes: 0 ok, 1 failed, 2 usage, 4 refused, 5 unsupported";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Identity,
+    Device,
     Capabilities,
     Telemetry {
         interval_ms: u64,
@@ -78,6 +82,8 @@ pub enum Command {
 pub struct Args {
     pub sysroot: PathBuf,
     pub state_dir: PathBuf,
+    /// Extra profiles (tests, maintainers). Core never passes it.
+    pub profiles_dir: Option<PathBuf>,
     pub command: Command,
 }
 
@@ -95,12 +101,14 @@ fn num<T: std::str::FromStr>(s: &str, flag: &str) -> Result<T, String> {
 pub fn parse(argv: &[String]) -> Result<Args, String> {
     let mut sysroot = PathBuf::from("/");
     let mut state_dir = PathBuf::from(DEFAULT_STATE_DIR);
+    let mut profiles_dir = None;
     let mut rest = Vec::new();
     let mut it = argv.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--sysroot" => sysroot = take(&mut it, a)?.into(),
             "--state-dir" => state_dir = take(&mut it, a)?.into(),
+            "--profiles-dir" => profiles_dir = Some(take(&mut it, a)?.into()),
             _ => rest.push(a.clone()),
         }
     }
@@ -142,6 +150,11 @@ pub fn parse(argv: &[String]) -> Result<Args, String> {
             known(&[])?;
             no_positional(&positional)?;
             Command::Identity
+        }
+        ("device", _) => {
+            known(&[])?;
+            no_positional(&positional)?;
+            Command::Device
         }
         ("capabilities", _) => {
             known(&[])?;
@@ -210,6 +223,7 @@ pub fn parse(argv: &[String]) -> Result<Args, String> {
     Ok(Args {
         sysroot,
         state_dir,
+        profiles_dir,
         command,
     })
 }
@@ -219,6 +233,7 @@ fn code_exit(code: ErrorCode) -> u8 {
         ErrorCode::Usage => EXIT_USAGE,
         ErrorCode::Unsupported | ErrorCode::NotImplemented => EXIT_UNSUPPORTED,
         ErrorCode::InvalidValue
+        | ErrorCode::NotAuthorized
         | ErrorCode::Refused
         | ErrorCode::DeviceMismatch
         | ErrorCode::ConfirmationRequired => EXIT_REFUSED,
@@ -264,17 +279,49 @@ pub fn identity() -> Value {
     )
 }
 
+/// Device identity, loaded profiles and the resolved tier.
+fn resolve(a: &Args, root: &SysRoot) -> (DeviceIdentity, profiles::Loaded, Resolution) {
+    let device = collect::device_identity(root);
+    // Synthetic (test-only) profiles count only against a fixture root.
+    let loaded = profiles::load(a.profiles_dir.as_deref(), a.sysroot != Path::new("/"));
+    let generic = root.exists("/sys/devices/system/cpu/present") || root.exists("/sys/block");
+    let resolution = profile::resolve(&loaded.profiles, &device, generic);
+    (device, loaded, resolution)
+}
+
 /// Runs a parsed command: (exit code, document).
 pub fn run(a: &Args) -> (u8, Value) {
     let root = SysRoot::new(&a.sysroot);
     match &a.command {
         Command::Identity => (EXIT_OK, identity()),
+        Command::Device => {
+            let (device, loaded, resolution) = resolve(a, &root);
+            (
+                EXIT_OK,
+                document(
+                    "device",
+                    VERSION,
+                    body(vec![
+                        ("device", val(&device)),
+                        ("resolution", val(&resolution)),
+                        (
+                            "profiles",
+                            serde_json::json!({
+                                "loaded": loaded.profiles.iter().map(|p| &p.profile_id).collect::<Vec<_>>(),
+                                "rejected": loaded.rejected,
+                            }),
+                        ),
+                    ]),
+                ),
+            )
+        }
         Command::Capabilities => {
             let tele = collect::telemetry(&root, 0);
             let jr = journal::boot_id(&root)
                 .ok()
                 .map(|b| Journal::load(&a.state_dir, &b));
-            let caps = collect::capabilities(&root, jr.as_ref(), &tele);
+            let (_, _, resolution) = resolve(a, &root);
+            let caps = collect::capabilities(&root, jr.as_ref(), &tele, &resolution);
             (
                 EXIT_OK,
                 document(
@@ -291,7 +338,8 @@ pub fn run(a: &Args) -> (u8, Value) {
             (EXIT_OK, document("telemetry", VERSION, m))
         }
         Command::Apply { op, value, dry_run } => {
-            let o = apply::apply(&root, &a.state_dir, *op, value, *dry_run);
+            let (_, _, resolution) = resolve(a, &root);
+            let o = apply::apply(&root, &a.state_dir, &resolution, *op, value, *dry_run);
             let exit = match (o.request.status, o.operation.status, &o.error) {
                 (RequestStatus::Rejected, _, Some(e)) => code_exit(e.code),
                 (_, OperationStatus::AppliedVerified, _)

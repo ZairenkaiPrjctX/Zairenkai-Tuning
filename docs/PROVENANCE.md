@@ -88,3 +88,14 @@ UI. See `GPU_TABLE.md`.
 ## Not used
 
 `Rve27/RvKernel-Manager` was cloned to look for Lynx under that name; nothing from it is used.
+
+## SoC registry data
+
+`crates/ztune-core/data/soc-registry.json` lists, with pinned commits, every source behind a
+family rule or label (Linux mainline 7be4bc52 for socinfo machine names and SoC compatibles;
+KonaBess ff387dc for device tree model codenames and their labels; LineageOS device trees for
+the `gs101`, `gs201`, `zuma` and `parrot` board platforms). Identifiers are recorded as facts;
+no kernel or device-tree code is copied. See `adr/0002-soc-family-registry.md`.
+
+Rejected: Lynx `references/dts/**/*.dtsi` at e56d6cd are short reconstructions, not kernel
+device trees, and are not used as evidence.
