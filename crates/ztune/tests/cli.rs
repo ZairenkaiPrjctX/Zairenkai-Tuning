@@ -148,6 +148,19 @@ fn rejected_requests_exit_4_and_write_nothing() {
 }
 
 #[test]
+fn failures_also_name_the_error_on_stderr() {
+    let f = device("stderr");
+    let out = Command::new(env!("CARGO_BIN_EXE_ztune"))
+        .arg("--sysroot")
+        .arg(&f.root)
+        .args(["apply", "gpu.governor", "userspace"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(4));
+    assert!(String::from_utf8_lossy(&out.stderr).starts_with("ztune: refused: "));
+}
+
+#[test]
 fn gpu_table_plan_needs_matching_device_and_token() {
     let f = device("gputable");
     let dts = f.state.with_extension("dts");

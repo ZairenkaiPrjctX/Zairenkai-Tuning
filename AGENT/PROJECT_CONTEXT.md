@@ -19,8 +19,8 @@
 |---|---|---|
 | Rust workspace (MSRV 1.85; serde, serde_json, sha2) | `Cargo.toml`, `Cargo.lock` | Verified. Evidence: `cargo +1.85.0 test --workspace`, 2026-10-22 |
 | Contract, parsers, validation, GPU table (no I/O) | `crates/ztune-core` | Verified. Evidence: 33 tests, 2026-10-22 |
-| SysRoot I/O, writer, journal, apply/restore, CLI | `crates/ztune` | Verified on fixtures. Evidence: 10 unit + 7 CLI tests, 2026-10-22. **Unverified** on a device |
-| Android component and Corresponding Source | `scripts/build-android.sh` | Unverified until run with an NDK |
+| SysRoot I/O, writer, journal, apply/restore, CLI | `crates/ztune` | Verified on fixtures. Evidence: 10 unit + 8 CLI tests, 2026-10-22. **Unverified** on a device |
+| Android component and Corresponding Source | `scripts/build-android.sh` | Verified. Evidence: NDK r27d build, exit 0; `cargo build --offline` from the extracted source archive succeeded with an empty `CARGO_HOME`, 2026-10-22. The rebuilt binary is not byte-identical (build paths are embedded) |
 | CI | `.github/workflows/ci.yml` | **Unverified** on GitHub |
 
 ## Key facts and limitations

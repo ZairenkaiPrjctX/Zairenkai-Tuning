@@ -34,5 +34,15 @@ fn main() -> ExitCode {
         "{}",
         serde_json::to_string_pretty(&doc).expect("documents serialize")
     );
+    // Callers that only see stderr on failure (Core's runner) still get the reason.
+    if code != cli::EXIT_OK {
+        if let Some(e) = doc.get("error") {
+            eprintln!(
+                "ztune: {}: {}",
+                e["code"].as_str().unwrap_or("?"),
+                e["message"].as_str().unwrap_or("")
+            );
+        }
+    }
     ExitCode::from(code)
 }

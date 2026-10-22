@@ -40,11 +40,11 @@ Non-negotiables in this repo:
 | Purpose | Command | Status |
 |---|---|---|
 | Build | `cargo build --workspace` | Verified. Evidence: 2026-10-22 |
-| Test | `cargo test --workspace` | Verified. Evidence: 50 passed (33 core + 10 unit + 7 CLI), 2026-10-22 |
+| Test | `cargo test --workspace` | Verified. Evidence: 51 passed (33 core + 10 unit + 8 CLI), 2026-10-22 |
 | Lint / format | `cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check` | Verified. Evidence: clean, 2026-10-22 |
 | MSRV | `cargo +1.85.0 test --workspace` | Verified. Evidence: passed, 2026-10-22 |
-| Shell lint | `shellcheck scripts/*.sh` | Configured |
-| Android component | `ANDROID_NDK_HOME=<ndk> scripts/build-android.sh` | Configured |
+| Shell lint | `shellcheck scripts/*.sh` | Verified. Evidence: clean (0.11.0), 2026-10-22 |
+| Android component | `ANDROID_NDK_HOME=<ndk> scripts/build-android.sh` | Verified. Evidence: NDK r27d (SHA-256 checked), aarch64 PIE for `/system/bin/linker64`, 16 KB LOAD alignment checked; the source archive rebuilt the binary offline with an empty `CARGO_HOME`, 2026-10-22 |
 | Validate agent foundation | `python3 <path-to-.github>/agent-foundation/scripts/validate_agent_setup.py .` | Configured |
 
 Only list commands that exist in this repository. Never invent one.

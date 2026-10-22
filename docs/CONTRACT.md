@@ -24,7 +24,9 @@ Consumers must ignore unknown fields.
 `0` success (including a dry run and "no change"), `1` failed (I/O, busy, verification or
 rollback), `2` usage error, `4` refused (invalid value, safety rule, device mismatch, missing
 confirmation), `5` unsupported on this device or not implemented. The document is printed in
-every case; a consumer should rely on the document, and use the exit code as a summary.
+every case; a consumer should rely on the document, and use the exit code as a summary. On a
+non-zero exit, one line `ztune: <error.code>: <error.message>` is also written to stderr, for
+callers that keep only stderr on failure.
 
 ## Commands
 
