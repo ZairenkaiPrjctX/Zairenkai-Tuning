@@ -1,0 +1,34 @@
+Zairenkai Tuning (ztune)
+Copyright 2026 ZairenkaiPrjctX contributors
+
+This program is free software: you can redistribute it and/or modify it under the terms of
+the GNU General Public License as published by the Free Software Foundation, version 3 only
+(GPL-3.0-only). It is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See LICENSE for the full text.
+
+"ZairenkaiPrjctX contributors" means the people who authored commits in the
+ZairenkaiPrjctX/Zairenkai-Tuning repository.
+
+This program contains code adapted from the following GPL-3.0 projects. Each adapted file
+names its upstream file and commit and lists its changes; docs/PROVENANCE.md has the details.
+
+  RvSystem-Monitor
+    https://github.com/Rve27/RvSystem-Monitor, commit b07fe27598555e49084bbcc40be558803286b9ef
+    Copyright (C) 2026 Rve27 (Radika), Pavelc4 and the RvSystem-Monitor contributors
+    Licensed under the GNU General Public License v3.0.
+
+  Lynx
+    https://github.com/Zy0x/Lynx, commit e56d6cd5005a543fa9798aa19b3627033593fbb0
+    Copyright (C) 2026 Zy0x (Noir) and the Lynx contributors
+    Licensed under the GNU General Public License v3.0.
+
+  KonaBess
+    https://github.com/libxzr/KonaBess, commit ff387dc7f630d7460c7a6561f83f71846217ee27
+    Copyright (C) 2021-2025 LibXZR, Luffitys and the KonaBess contributors
+    Licensed under the GNU General Public License v3.0.
+
+The upstream projects do not carry per-file copyright notices; the lines above name the
+authors of the adapted files as recorded in each project's git history.
+
+Rust crates linked into the binary are listed with their licences in docs/THIRD_PARTY.md.

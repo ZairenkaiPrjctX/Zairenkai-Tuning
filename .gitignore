@@ -1,0 +1,16 @@
+# Personal Claude Code settings (never commit)
+.claude/settings.local.json
+
+# Secrets and key material
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+
+# Build output
+/target
+/dist

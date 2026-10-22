@@ -1,0 +1,37 @@
+/dts-v1/;
+
+/ {
+	model = "Qualcomm Technologies, Inc. kona v2.1 SoC";
+	compatible = "qcom,kona-mtp", "qcom,kona";
+	soc {
+		qcom,kgsl-3d0@3d00000 {
+			qcom,gpu-pwrlevel-bins {
+				compatible = "qcom,gpu-pwrlevels-bins";
+				qcom,gpu-pwrlevels-0 {
+					qcom,speed-bin = <0x0>;
+					qcom,initial-pwrlevel = <0x3>;
+					qcom,gpu-pwrlevel@0 {
+						reg = <0x0>;
+						qcom,gpu-freq = <0x2b5523c0>;
+						qcom,level = <0x1a0>;
+					};
+					qcom,gpu-pwrlevel@1 {
+						reg = <0x1>;
+						qcom,gpu-freq = <0x23c34600>;
+						qcom,level = <0x140>;
+					};
+					qcom,gpu-pwrlevel@2 {
+						reg = <0x2>;
+						qcom,gpu-freq = <0x1dcd6500>;
+						qcom,level = <0x100>;
+					};
+					qcom,gpu-pwrlevel@3 {
+						reg = <0x3>;
+						qcom,gpu-freq = <0x0f518240>;
+						qcom,level = <0x40>;
+					};
+				};
+			};
+		};
+	};
+};

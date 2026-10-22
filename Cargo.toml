@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = ["crates/ztune-core", "crates/ztune"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+license = "GPL-3.0-only"
+repository = "https://github.com/ZairenkaiPrjctX/Zairenkai-Tuning"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+sha2 = "0.10"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "unwind"
+strip = "symbols"
